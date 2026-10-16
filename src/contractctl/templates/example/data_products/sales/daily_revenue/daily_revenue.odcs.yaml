@@ -1,0 +1,150 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Data contract: daily_revenue (gold, consumer-aligned data product)
+#
+# The business logic lives next to this file in daily_revenue.logic.sql (a plain SELECT).
+# `contractctl generate` wraps it with everything this contract promises: schema, NOT NULL,
+# primary key, expectations, comments, row filter, table properties, tags, grants and SLA checks.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v3.1.0
+kind: DataContract
+id: urn:datacontract:sales:daily_revenue
+name: daily_revenue
+version: 1.0.0
+status: active
+domain: sales
+dataProduct: daily_revenue
+
+description:
+  purpose: >-
+    Daily revenue and order counts per delivery country, excluding cancelled orders from revenue.
+  usage: >-
+    Sales dashboards and country performance reviews. Row access is limited to the countries
+    a consumer is entitled to (governance.country_access).
+  limitations: >-
+    Revenue is gross (incl. VAT) in EUR. Late-arriving orders are included on their order date.
+
+team:
+  name: Sales Analytics
+  members:
+    - username: sofie.claes@example.com
+      name: Sofie Claes
+      role: Data Product Owner
+
+roles:
+  - role: sales_analysts
+    access: read
+    description: Sales analysts; rows limited to entitled countries
+
+support:
+  - channel: sales-analytics-support
+    tool: teams
+    url: https://teams.microsoft.com/l/channel/sales-analytics-support
+  - channel: sales-analytics-mailbox
+    tool: email
+    url: mailto:sales-analytics@example.com
+
+slaProperties:
+  - property: freshness
+    value: 25
+    unit: h
+    element: daily_revenue.latest_ingested_at
+  - property: frequency
+    value: 1
+    unit: h
+
+customProperties:
+  - property: layer
+    value: gold
+  - property: businessLogic
+    value: daily_revenue.logic.sql
+  - property: inputs              # declared dependencies: checked in CI, used for impact analysis
+    value:
+      - urn:datacontract:sales:orders
+  - property: rowFilter
+    value:
+      function: governance.filter_country
+      columns: [country_code]
+
+servers:
+  - server: dev
+    type: databricks
+    catalog: {{catalog}}
+    schema: gold
+
+schema:
+  - name: daily_revenue
+    physicalName: daily_revenue
+    physicalType: materialized_view
+    description: Revenue per order date and country
+
+    quality:
+      - type: sql
+        name: has_rows
+        dimension: completeness
+        query: SELECT count(*) FROM gold.daily_revenue
+        mustBeGreaterThan: 0
+
+    properties:
+      - name: order_date
+        description: Date the orders were placed (UTC)
+        logicalType: date
+        physicalType: DATE
+        required: true
+        primaryKey: true
+        primaryKeyPosition: 1
+      - name: country_code
+        description: ISO 3166-1 alpha-2 delivery country
+        logicalType: string
+        physicalType: STRING
+        required: true
+        primaryKey: true
+        primaryKeyPosition: 2
+      - name: orders_count
+        description: Number of orders placed, including cancelled ones
+        logicalType: integer
+        physicalType: BIGINT
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: orders_count_positive
+            dimension: accuracy
+            implementation:
+              expression: "orders_count > 0"
+              onViolation: fail
+      - name: cancelled_count
+        description: Number of cancelled orders
+        logicalType: integer
+        physicalType: BIGINT
+        required: true
+      - name: revenue_eur
+        description: Revenue of non-cancelled orders, EUR incl. VAT
+        logicalType: number
+        physicalType: DECIMAL(18,2)
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: revenue_non_negative
+            dimension: accuracy
+            implementation:
+              expression: "revenue_eur >= 0"
+              onViolation: fail
+      - name: avg_order_value_eur
+        description: Average value of non-cancelled orders, EUR
+        logicalType: number
+        physicalType: DECIMAL(18,2)
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: avg_order_value_plausible
+            description: Unusually high averages are published but flagged
+            dimension: accuracy
+            implementation:
+              expression: "avg_order_value_eur IS NULL OR avg_order_value_eur < 5000"
+              onViolation: warn
+      - name: latest_ingested_at
+        description: Most recent ingestion time of the orders behind this row; drives the freshness SLA
+        logicalType: timestamp
+        physicalType: TIMESTAMP
+        required: true

@@ -1,0 +1,21 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- OPTIONAL, for scale: attribute-based access control (ABAC).
+--
+-- The generated SQL attaches masks and row filters per table (works everywhere).
+-- With ABAC, one policy on a catalog or schema protects every column that carries
+-- a governed tag, including tables created later. The contracts already emit the
+-- tags (pii = email); ABAC needs them to be GOVERNED tags, defined at account level
+-- by an admin, with the allowed value "email".
+--
+-- A policy and a table-level mask may co-exist on a column when they use the same
+-- function, so you can introduce ABAC without changing the contracts.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- CREATE OR REPLACE POLICY mask_pii_email
+--   ON SCHEMA {{catalog}}.silver
+--   COMMENT 'Mask every column tagged pii=email in the silver schema'
+--   COLUMN MASK {{catalog}}.governance.mask_email
+--   TO `account users` EXCEPT `pii_readers`
+--   FOR TABLES
+--   MATCH COLUMNS has_tag_value('pii', 'email') AS email
+--   ON COLUMN email;

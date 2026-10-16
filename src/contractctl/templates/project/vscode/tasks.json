@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "contractctl: generate",
+      "type": "shell",
+      "command": "contractctl generate",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "contractctl: lint",
+      "type": "shell",
+      "command": "contractctl lint",
+      "problemMatcher": []
+    },
+    {
+      "label": "contractctl: check",
+      "type": "shell",
+      "command": "contractctl check",
+      "problemMatcher": []
+    },
+    {
+      "label": "contractctl: diff against main",
+      "type": "shell",
+      "command": "contractctl diff --base main",
+      "problemMatcher": []
+    },
+    {
+      "label": "contractctl: import a table from Unity Catalog",
+      "type": "shell",
+      "command": "contractctl import ${input:ucTable} --domain ${input:domain}",
+      "problemMatcher": []
+    },
+    {
+      "label": "contractctl: drift (Unity Catalog vs contracts)",
+      "type": "shell",
+      "command": "contractctl drift",
+      "problemMatcher": []
+    },
+    {
+      "label": "bundle: validate + deploy (dev)",
+      "type": "shell",
+      "command": "databricks bundle validate && databricks bundle deploy",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "ucTable",
+      "type": "promptString",
+      "description": "Unity Catalog table (catalog.schema.table)"
+    },
+    {
+      "id": "domain",
+      "type": "promptString",
+      "description": "Data domain"
+    }
+  ]
+}

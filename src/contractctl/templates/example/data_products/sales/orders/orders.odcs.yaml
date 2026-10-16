@@ -1,0 +1,248 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Data contract: orders (silver, source-aligned data product)
+# Standard: Open Data Contract Standard (ODCS) v3 — https://bitol-io.github.io/open-data-contract-standard/
+#
+# This file is the single source of truth. `contractctl generate` compiles it into:
+#   generated/pipelines/sales/bronze/orders_raw.sql   ingestion from the landing volume
+#   generated/pipelines/sales/silver/orders.sql       casting, expectations, quarantine
+#   generated/governance/sales/orders.sql             registry, tags, certification, grants
+#   generated/sla/sales/orders.sql                    freshness + table-level checks
+#   resources/generated/sales.yml                     pipeline + job + notifications
+# Change it through a pull request; CI blocks breaking changes without a MAJOR bump.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v3.1.0
+kind: DataContract
+id: urn:datacontract:sales:orders
+name: orders
+version: 1.0.0
+status: active
+domain: sales
+dataProduct: orders
+
+description:
+  purpose: >-
+    One record per customer order placed in the Benelux web shop, typed and validated.
+    Records that violate this contract are routed to silver.orders_quarantine with the reason.
+  usage: >-
+    Source for sales reporting and analytics data products. Join on customer_id for customer analytics.
+  limitations: >-
+    Amounts are in EUR. Customer e-mail addresses may not be used for marketing.
+
+team:
+  name: Order Management
+  description: Producing team of the web shop order data
+  members:
+    - username: jane.peeters@example.com
+      name: Jane Peeters
+      role: Data Product Owner
+    - username: tom.janssens@example.com
+      name: Tom Janssens
+      role: Data Engineer
+
+# access: write = producing team (sees bronze + quarantine), read = consumers
+roles:
+  - role: orders_producers
+    access: write
+    description: Producing team; can inspect raw and quarantined records
+  - role: sales_analysts
+    access: read
+    description: Analysts; customer e-mail is masked unless also in pii_readers
+
+support:
+  - channel: orders-data-support
+    tool: teams
+    url: https://teams.microsoft.com/l/channel/orders-data-support
+  - channel: orders-data-mailbox
+    tool: email
+    url: mailto:orders-data@example.com
+
+slaProperties:
+  - property: freshness
+    value: 24
+    unit: h
+    element: orders.ingested_at
+  - property: frequency
+    value: 1
+    unit: h
+  - property: retention
+    value: 7
+    unit: y
+    element: orders.order_ts
+
+customProperties:
+  - property: layer
+    value: silver
+  - property: source            # where the source system delivers files (bronze landing volume)
+    value:
+      path: orders
+      format: json
+
+servers:
+  - server: dev
+    type: databricks
+    catalog: {{catalog}}
+    schema: silver
+
+schema:
+  - name: orders
+    physicalName: orders
+    physicalType: table
+    description: Contract-compliant customer orders
+
+    quality:
+      - type: custom
+        engine: lakeflow-expectations
+        name: conforms_to_source_schema
+        description: No unexpected fields in the delivered files (Auto Loader rescued-data column is empty)
+        dimension: conformity
+        implementation:
+          expression: "_rescued_data IS NULL"
+          onViolation: quarantine
+      - type: sql
+        name: quarantine_rate_below_5_pct
+        description: At most 5% of the orders received in the last 7 days may violate the contract
+        dimension: accuracy
+        query: |-
+          SELECT coalesce(q / nullif(q + v, 0), 0)
+          FROM (SELECT
+            (SELECT count(*) FROM silver.orders_quarantine WHERE _ingested_at >= current_timestamp() - INTERVAL 7 DAYS) AS q,
+            (SELECT count(*) FROM silver.orders WHERE ingested_at >= current_timestamp() - INTERVAL 7 DAYS) AS v)
+        mustBeLessThan: 0.05
+
+    properties:
+      - name: order_id
+        description: Business key of the order, format ORD-nnnnn
+        logicalType: string
+        physicalType: STRING
+        primaryKey: true
+        primaryKeyPosition: 1
+        required: true
+        unique: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: order_id_format
+            dimension: conformity
+            implementation:
+              expression: "order_id RLIKE '^ORD-[0-9]{5}$'"
+              onViolation: quarantine
+          - type: custom
+            engine: lakeflow-expectations
+            name: no_test_orders
+            description: Test orders must never reach production. Stops the pipeline.
+            dimension: accuracy
+            implementation:
+              expression: "order_id NOT LIKE 'TEST-%'"
+              onViolation: fail
+
+      - name: customer_id
+        description: Customer identifier in the CRM
+        logicalType: string
+        physicalType: STRING
+        required: true
+
+      - name: customer_email
+        description: Customer e-mail address (personal data, masked outside pii_readers)
+        logicalType: string
+        physicalType: STRING
+        classification: confidential
+        tags: ["pii:email"]
+        customProperties:
+          - property: mask
+            value: governance.mask_email
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: valid_email_format
+            dimension: conformity
+            implementation:
+              expression: "customer_email IS NULL OR customer_email LIKE '%_@_%._%'"
+              onViolation: quarantine
+
+      - name: country_code
+        description: ISO 3166-1 alpha-2 country of the delivery address
+        logicalType: string
+        physicalType: STRING
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: country_in_scope
+            description: The web shop delivers in these countries; others are published but flagged
+            dimension: conformity
+            implementation:
+              expression: "country_code IN ('BE', 'NL', 'LU', 'FR', 'DE')"
+              onViolation: warn
+
+      - name: order_status
+        description: Lifecycle status of the order
+        logicalType: string
+        physicalType: STRING
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: valid_order_status
+            dimension: conformity
+            implementation:
+              expression: "order_status IN ('PLACED', 'SHIPPED', 'DELIVERED', 'CANCELLED')"
+              onViolation: quarantine
+
+      - name: amount
+        description: Order total including VAT, in EUR
+        logicalType: number
+        physicalType: DECIMAL(12,2)
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: amount_non_negative
+            dimension: accuracy
+            implementation:
+              expression: "amount >= 0"
+              onViolation: quarantine
+          - type: custom
+            engine: lakeflow-expectations
+            name: amount_plausible
+            description: Orders above 10k EUR are published but flagged for review
+            dimension: accuracy
+            implementation:
+              expression: "amount < 10000"
+              onViolation: warn
+
+      - name: currency
+        description: ISO 4217 currency code
+        logicalType: string
+        physicalType: STRING
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: currency_is_eur
+            dimension: conformity
+            implementation:
+              expression: "currency = 'EUR'"
+              onViolation: warn
+
+      - name: order_ts
+        description: Moment the customer placed the order (UTC)
+        logicalType: timestamp
+        physicalType: TIMESTAMP
+        required: true
+        quality:
+          - type: custom
+            engine: lakeflow-expectations
+            name: order_ts_not_in_future
+            dimension: accuracy
+            implementation:
+              expression: "order_ts <= current_timestamp()"
+              onViolation: quarantine
+
+      - name: ingested_at
+        description: Moment the platform ingested the record; drives the freshness SLA
+        logicalType: timestamp
+        physicalType: TIMESTAMP
+        required: true
+        customProperties:
+          - property: generatedBy
+            value: ingestion_timestamp

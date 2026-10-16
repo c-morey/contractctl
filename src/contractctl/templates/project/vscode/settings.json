@@ -1,0 +1,11 @@
+{
+  // Validate and autocomplete contracts against the official ODCS v3.1.0 JSON schema
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/bitol-io/open-data-contract-standard/refs/heads/main/schema/odcs-json-schema-v3.1.0.json": "data_products/**/*.odcs.yaml"
+  },
+  // Generated files are compiled from the contracts: never edit them by hand
+  "files.readonlyInclude": {
+    "generated/**": true,
+    "resources/generated/**": true
+  }
+}

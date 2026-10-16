@@ -1,0 +1,9 @@
+# The owners in each contract approve every change to their data product.
+# Replace these lines with your own teams, one line per data product folder.
+# /data_products/<domain>/<product>/   @<org>/<owning-team>
+
+# The platform team owns how contracts map onto the platform.
+# /contractctl.yml   @<org>/data-platform
+# /platform/         @<org>/data-platform
+# /databricks.yml    @<org>/data-platform
+# /.github/          @<org>/data-platform

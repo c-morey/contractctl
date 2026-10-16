@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+
+  example-is-valid-odcs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . datacontract-cli
+      - name: The example contracts validate against the ODCS JSON schema
+        run: |
+          contractctl init "$RUNNER_TEMP/example" --catalog analytics --example
+          find "$RUNNER_TEMP/example/data_products" -name '*.odcs.yaml' -print0 | xargs -0 -n1 datacontract lint
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - name: The wheel works without the source tree
+        run: |
+          python -m venv /tmp/venv && /tmp/venv/bin/pip install dist/*.whl
+          cd "$RUNNER_TEMP" && /tmp/venv/bin/contractctl init smoke --catalog analytics --example
+          cd smoke && /tmp/venv/bin/contractctl check

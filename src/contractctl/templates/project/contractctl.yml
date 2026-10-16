@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# contractctl configuration: how data contracts map onto YOUR Databricks platform.
+# Set this once per organisation; data product teams only write contracts.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Where contracts live (one folder per data product: <dir>/<domain>/<product>/*.odcs.yaml)
+data_products_dir: data_products
+
+# Where compiled artifacts are written (committed to git, never edited by hand)
+generated_dir: generated
+resources_dir: resources/generated
+
+# Medallion layers -> Unity Catalog schemas (the catalog comes from the bundle target)
+schemas:
+  bronze: bronze
+  silver: silver
+  gold: gold
+  governance: governance
+
+# Landing zone the source systems deliver to (a Unity Catalog volume in the bronze schema)
+landing_volume: landing
+
+# Column mask applied to properties tagged "pii" when the contract names no specific mask
+default_pii_mask: governance.mask_pii
+
+pipeline:
+  continuous: false          # true = always-on streaming; false = triggered by the job
+  serverless: true
+
+job:
+  schedule_from_sla: true    # true = job schedule from the tightest `frequency` SLA in the domain
+                             # false = no schedule: run manually, from a notebook or from CI
+
+features:
+  certification_badge: true  # needs ASSIGN on the system.certification_status governed tag
+
+notifications:
+  # Pipeline failures go to the platform team; contract breaches go to the contract's
+  # support e-mail (taken from the contract) plus this address.
+  platform_email: ${var.platform_alert_email}
+  # Optional: id of a Microsoft Teams notification destination (Settings > Notifications)
+  teams_destination_id: ""

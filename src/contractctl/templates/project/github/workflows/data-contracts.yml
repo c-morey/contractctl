@@ -1,0 +1,56 @@
+name: data-contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install contractctl
+        run: pip install "contractctl=={{version}}" datacontract-cli
+
+      - name: Contracts are valid ODCS
+        run: find data_products -name '*.odcs.yaml' -print0 | xargs -0 -r -n1 datacontract lint
+
+      - name: Contracts are consistent (rules, SLAs, dependencies)
+        run: contractctl lint
+
+      - name: Generated SQL and resources match the contracts
+        run: contractctl check
+
+      - name: Versioning, breaking changes and downstream impact
+        if: github.event_name == 'pull_request'
+        run: contractctl diff --base origin/${{ github.base_ref }}
+
+      # Optional: needs the DATABRICKS_* secrets (service principal, OAuth M2M)
+      - uses: databricks/setup-cli@main
+        if: env.DATABRICKS_HOST != ''
+      - name: Bundle is valid
+        if: env.DATABRICKS_HOST != ''
+        run: databricks bundle validate -t dev
+
+  deploy:
+    # Optional: set the repository variable ENABLE_PROD_DEPLOY=true and a real prod host
+    if: github.event_name == 'push' && vars.ENABLE_PROD_DEPLOY == 'true'
+    needs: contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - run: databricks bundle deploy -t prod

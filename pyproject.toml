@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contractctl"
+version = "0.1.0"
+description = "Compile ODCS data contracts into governed Databricks pipelines: expectations, quarantine, masks, grants and SLA checks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Ceren Morey" }]
+keywords = ["data contracts", "odcs", "databricks", "unity catalog", "lakeflow", "data quality", "data governance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = ["pyyaml>=6"]
+
+[project.optional-dependencies]
+databricks = ["databricks-sdk>=0.40"]
+dev = ["pytest>=8", "ruff>=0.6", "build", "twine", "databricks-sdk>=0.40"]
+
+[project.urls]
+Homepage = "https://github.com/c-morey/contractctl"
+Issues = "https://github.com/c-morey/contractctl/issues"
+Changelog = "https://github.com/c-morey/contractctl/blob/main/CHANGELOG.md"
+
+[project.scripts]
+contractctl = "contractctl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+contractctl = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

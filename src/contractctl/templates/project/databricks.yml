@@ -1,0 +1,40 @@
+# Declarative Automation Bundle (formerly Databricks Asset Bundles).
+# The pipeline and job definitions are generated from the contracts into resources/generated/
+# by `contractctl generate`. Never edit those files by hand.
+bundle:
+  name: {{bundle_name}}
+
+include:
+  - resources/generated/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds bronze, silver, gold and governance
+    default: {{catalog}}
+  warehouse_id:
+    description: SQL warehouse that runs the governance and SLA tasks
+    lookup:
+      warehouse: Serverless Starter Warehouse   # the name of a SQL warehouse in your workspace
+  platform_alert_email:
+    description: Receives pipeline failures and a copy of every contract breach
+    # Set it per target, or locally in .databricks/bundle/<target>/variable-overrides.json
+    default: data-platform@example.com
+
+sync:
+  exclude:
+    - "*.egg-info/**"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://<your-workspace>.azuredatabricks.net
+
+  prod:
+    mode: production
+    workspace:
+      host: https://<your-prod-workspace>.azuredatabricks.net
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    # run_as:
+    #   service_principal_name: <application-id of the deployment service principal>
